@@ -3,12 +3,12 @@ function pendulum_estimator_usage_example()
     
     %folder where your video is located
     %make sure that video_path ends with '\'
-    video_path = 'C:\Users\taylorott\Desktop\pendulum_videos\';
+    video_path = 'C:\Users\elija\OneDrive - Olin College of Engineering\Desktop\QEA3\Pendulum Project\';
     %file name of the pendulum video
-    video_fname = 'pendulum_video01.mov';
+    video_fname = 'pendulum.mov';
 
     %folder where camera intrinsics is located
-    camera_calibration_path = 'C:\Users\taylorott\Documents\';
+    camera_calibration_path = 'C:\Users\elija\OneDrive - Olin College of Engineering\Desktop\QEA3\Pendulum Project\';
     %file name of camera calibration data
     camera_calibration_fname = 'camera_intrinsics01.mat';
 
@@ -17,12 +17,12 @@ function pendulum_estimator_usage_example()
     camera_intrinsics = calibration_data.camera_intrinsics;
 
     %folder for where to save/load pendulum intermediate data
-    pendulum_temp_path = 'C:\Users\taylorott\Documents\';
+    pendulum_temp_path = 'C:\Users\elija\OneDrive - Olin College of Engineering\Desktop\QEA3\Pendulum Project\';
     %file name of intermediate data for pendulum estimator
     pendulum_temp_fname = 'pendulum_temp.mat';
 
     %folder where pendulum data will be stored
-    pendulum_data_path = 'C:\Users\taylorott\Documents\';
+    pendulum_data_path = 'C:\Users\elija\OneDrive - Olin College of Engineering\Desktop\QEA3\Pendulum Project\';
     %file name of pendulum data
     pendulum_fname = 'pendulum_data01.mat';
 
@@ -52,9 +52,9 @@ function pendulum_estimator_usage_example()
     %Preprocess the pendulum video
     %COMMENT THIS BLOCK OUT AFTER IT SUCCESSFULLY RUNS ON THE VIDEO
     %Identify aprilTag positions in the video
-    myEstimator.identify_aprilTags([video_path,video_fname],tagFamily,camera_intrinsics,tagSize);
+    %myEstimator.identify_aprilTags([video_path,video_fname],tagFamily,camera_intrinsics,tagSize);
     %save intermediate state of estimator to a file
-    myEstimator.save_to_file([pendulum_temp_path,pendulum_temp_fname]);
+    %myEstimator.save_to_file([pendulum_temp_path,pendulum_temp_fname]);
 
     %Process the pendulum video
     %load intermediate state of estimator from a file

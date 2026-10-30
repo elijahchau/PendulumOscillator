@@ -2,14 +2,14 @@
 function calibrate_camera_usage_example()  
     %file folder where your video is located
     %make sure that video_path ends with '\'
-    video_path = 'C:\Users\taylorott\Desktop\pendulum_videos\';
+    video_path = 'C:\Users\elija\OneDrive - Olin College of Engineering\Desktop\QEA3\Pendulum Project\';
     
     %file name of the calibration video
-    video_fname = 'calibration_video01.mov';
+    video_fname = 'calibration.mov';
 
     %file path of folder where we want to save processed data
     %make sure that save_path ends with '\'
-    save_path = 'C:\Users\taylorott\Documents\';
+    save_path = 'C:\Users\elija\OneDrive - Olin College of Engineering\Desktop\QEA3\Pendulum Project\';
 
     %file name of where we want to store processed data
     data_fname = 'camera_intrinsics01.mat';

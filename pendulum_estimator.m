@@ -3,6 +3,7 @@ classdef pendulum_estimator < handle
     properties
         myGraph;                    %factor graph for pose estimation
         keypoint_node_dictionary;   %maps AprilTag keypoints to node ID's
+        tag_counts;                 %number of times each tag was seen
         tag_centroid_dictionary;    %dictionary of tag centroid positions
         tag_centroid_mat;           %locations of tag centroids as a matrix
         frame_node_dictionary;      %maps image frames to node ID's
@@ -19,6 +20,7 @@ classdef pendulum_estimator < handle
         video_fname;                %file name of pendulum video
         tag_family;                 %tag family for april tags
         tagSize;                    %size of april tags
+        canny_threshold;            %used for canny edge detection
         
         %true if a video frame node has been connected to origin anchor
         %via a relative pose. False otherwise
@@ -29,8 +31,9 @@ classdef pendulum_estimator < handle
 
         %initialize the class
         function obj = pendulum_estimator()
-            obj.myGraph = factorGraph;
+            obj.myGraph = factorGraph();
             obj.keypoint_node_dictionary = dictionary([],[]);
+            obj.tag_counts = dictionary([],[]);
             obj.tag_centroid_dictionary = dictionary([],{});
             obj.tag_centroid_mat = [];
             obj.frame_node_dictionary = dictionary([],[]);
@@ -50,13 +53,15 @@ classdef pendulum_estimator < handle
 
             obj.num_nodes = 0;
             obj.starting_frame_anchored = 0;
+            obj.canny_threshold = .1;
 
             obj.create_anchor_node();
         end
 
         %saves object properties to a file
         function save_to_file(obj,fname)
-            keypoint_node_dictionary = obj.keypoint_node_dictionary;   
+            keypoint_node_dictionary = obj.keypoint_node_dictionary;
+            tag_counts = obj.tag_counts;
             tag_centroid_dictionary = obj.tag_centroid_dictionary;    
             tag_centroid_mat = obj.tag_centroid_mat;           
             frame_node_dictionary = obj.frame_node_dictionary;      
@@ -74,8 +79,10 @@ classdef pendulum_estimator < handle
             video_fname = obj.video_fname;
             tag_family = obj.tag_family;
             tagSize = obj.tagSize;
+            canny_threshold = obj.canny_threshold;
 
             save(fname,'keypoint_node_dictionary',...
+                        'tag_counts',...
                         'tag_centroid_dictionary',...
                         'tag_centroid_mat',...
                         'frame_node_dictionary',...
@@ -99,7 +106,8 @@ classdef pendulum_estimator < handle
         function load_from_file(obj,fname)
             data = load(fname);
 
-            obj.keypoint_node_dictionary = data.keypoint_node_dictionary;   
+            obj.keypoint_node_dictionary = data.keypoint_node_dictionary;
+            obj.tag_counts = data.tag_counts;
             obj.tag_centroid_dictionary = data.tag_centroid_dictionary;    
             obj.tag_centroid_mat = data.tag_centroid_mat;           
             obj.frame_node_dictionary = data.frame_node_dictionary;      
@@ -117,8 +125,10 @@ classdef pendulum_estimator < handle
             obj.video_fname = data.video_fname;
             obj.tag_family = data.tag_family;
             obj.tagSize = data.tagSize;
+        end
 
-
+        function set_canny_threshold(obj,val_in)
+            obj.canny_threshold = val_in;
         end
 
         %finds node ID of aprilTag keypoint. If no node ID exists,
@@ -176,23 +186,31 @@ classdef pendulum_estimator < handle
             obj.starting_frame_anchored = 1;
         end
 
+
         %adds aprilTags to factor graph for current frame
-        function add_tag_landmarks(obj,frame_num,tag_ID_list,tag_loc,tag_poses,tagSize)
-            %stop if there are no tags to add
-            if isempty(tag_ID_list)
+        function add_tag_landmarks(obj,frame_num,use_tag_dict,tagSize)
+
+            tag_struct = obj.aprilTag_frame_data(frame_num);
+            tag_struct = tag_struct{1};
+
+            %unpack tag_struct
+            tag_ID_list =   tag_struct.tag_ID_list;
+            tag_poses   =   tag_struct.tag_poses;
+
+            %checks to see if there is at least one usable aprilTag
+            %in the current image frame
+            use_this_frame = 0;
+            %iterate through each aprilTag
+            for n = 1:numel(tag_ID_list)
+                tag_ID = tag_ID_list(n);
+                use_this_frame = use_this_frame || use_tag_dict(tag_ID);
+            end
+            
+            %stop if there are no tags to add and frame is useless
+            if ~use_this_frame
                 return
             end
 
-            %combine tag information in a struct
-            tag_struct = struct();
-            tag_struct.tag_ID_list = tag_ID_list;
-            tag_struct.tag_loc     = tag_loc;
-            tag_struct.tag_poses   = tag_poses;
-
-            %store tag information in dictionary
-            obj.aprilTag_frame_data = dictionary(frame_num,{tag_struct});
-
-        
             %if an image frame has not been moored yet, do so.
             if obj.starting_frame_anchored == 0
                 obj.connect_frame_to_anchor(frame_num);
@@ -207,6 +225,10 @@ classdef pendulum_estimator < handle
             %iterate through each aprilTag
             for n = 1:numel(tag_ID_list)
                 tag_ID = tag_ID_list(n); %get ID of current tag
+
+                if ~use_tag_dict(tag_ID)
+                    continue;
+                end
 
                 %keypoint positions in the observed frame
                 keypoint_pos = tag_poses(n).A*pos_tag_frame;
@@ -318,6 +340,7 @@ classdef pendulum_estimator < handle
                 fig1 = figure();
 
                 pendulum_image = [];
+                aprilTag_dots = [];
 
                 if video_flag(1)==1
                     pendulum_image = imshow(read(vidObj,1));
@@ -328,7 +351,7 @@ classdef pendulum_estimator < handle
                 end
 
                 if video_flag(1) == 4
-                    pendulum_image = imshow(edge(im2gray(read(vidObj,1)),'canny',.1));
+                    pendulum_image = imshow(edge(im2gray(read(vidObj,1)),'canny',obj.canny_threshold));
                 end
 
                 title('Pendulum Video with Line Fit');
@@ -336,7 +359,11 @@ classdef pendulum_estimator < handle
                 if isscalar(video_flag) || video_flag(2)~=0
                     hold on
                     pendulum_line_image = plot(0,0,'r','linewidth',3);
-                    set(0,'currentfigure',fig1);
+                end
+
+                if ~isscalar(video_flag) && video_flag(2)==2
+                    hold on
+                    aprilTag_dots = plot(0,0,'ro','markerfacecolor','r','markersize',3);
                 end
 
                 fig2 = figure();
@@ -365,8 +392,14 @@ classdef pendulum_estimator < handle
                 end
 
                 vidFrame = read(vidObj,n);
+
+                if ~isKey(obj.frame_pose_dictionary,n)
+                    continue
+                end
+
                 frame_pose = obj.frame_pose_dictionary(n);
                 frame_pose = frame_pose{1};
+
 
                 %use aprilTags to compute an image mask
                 mask_polygon = compute_mask_polygon(obj,frame_pose);
@@ -376,7 +409,7 @@ classdef pendulum_estimator < handle
                 temp_image_greyscale = im2gray(vidFrame);
                 
                 %use canny edge detection to extract image edges
-                temp_image = edge(temp_image_greyscale,'canny',.1);
+                temp_image = edge(temp_image_greyscale,'canny',obj.canny_threshold);
 
                 %apply image mask to the detected edges
                 temp_image(image_mask) = 0;
@@ -467,6 +500,22 @@ classdef pendulum_estimator < handle
                             'ydata',y_mean+L*pendulum_frame_in_image(2,1)*[-1,1]);
                     end
 
+                    if ~isscalar(video_flag) && video_flag(2)==2
+                        tag_struct = obj.aprilTag_frame_data(n);
+                        tag_struct = tag_struct{1};
+                        
+                        xdots = []; ydots = [];
+
+                        for tag_iter = 1:size(tag_struct.tag_loc,3)
+                            xdots = [xdots;tag_struct.tag_loc(:,1,tag_iter)];
+                            ydots = [ydots;tag_struct.tag_loc(:,2,tag_iter)];
+                        end
+
+                        set(aprilTag_dots,'xdata',xdots,'ydata',ydots);
+
+                        % aprilTag_dots = plot(0,0,'ro','markerfacecolor','r','markersize',3);
+                    end
+
                     set(0,'currentfigure',fig2);
                     set(theta_plot1,'xdata',t_list,'ydata',theta_list);
                     set(theta_plot2,'xdata',t_list,'ydata',theta_list);
@@ -513,13 +562,15 @@ classdef pendulum_estimator < handle
             %used to determine when to print processing update
             prev_percent_complete = -1;
 
+            
+
             for n = frame_list
                 %compute progress in percent
                 percent_complete = floor(100*n/nFrames);
 
                 vidFrame = read(vidObj,n);
         
-                [tag_id_list,tag_loc,tag_poses] = readAprilTag(vidFrame,tag_family,camera_intrinsics,tagSize);
+                [tag_ID_list,tag_loc,tag_poses] = readAprilTag(vidFrame,tag_family,camera_intrinsics,tagSize);
                 
                 %if the progress has incremented by 1%...
                 if percent_complete ~= prev_percent_complete
@@ -527,8 +578,39 @@ classdef pendulum_estimator < handle
                     disp(['AprilTag Tracking: ',num2str(percent_complete),'%']);
                     prev_percent_complete = percent_complete;
                 end
-        
-                obj.add_tag_landmarks(n,tag_id_list,tag_loc,tag_poses,tagSize);
+
+                for tag_ID = tag_ID_list
+                    if ~isKey(obj.tag_counts,tag_ID)
+                        obj.tag_counts(tag_ID) = 0;
+                    end
+
+                    obj.tag_counts(tag_ID) = obj.tag_counts(tag_ID)+1;
+                end
+
+                %combine tag information in a struct
+                tag_struct = struct();
+                tag_struct.tag_ID_list = tag_ID_list;
+                tag_struct.tag_loc     = tag_loc;
+                tag_struct.tag_poses   = tag_poses;
+    
+                %store tag information in dictionary
+                obj.aprilTag_frame_data(n) = {tag_struct};
+            end
+
+            max_tag_count = 0;
+
+            for tag_ID = keys(obj.tag_counts)'
+                max_tag_count = max(obj.tag_counts(tag_ID),max_tag_count);
+            end
+
+            use_tag_dict = dictionary([],[]);
+ 
+            for tag_ID = keys(obj.tag_counts)'
+                use_tag_dict(tag_ID) = obj.tag_counts(tag_ID)>=.1*max_tag_count;
+            end
+
+            for n = frame_list
+                obj.add_tag_landmarks(n,use_tag_dict,tagSize);
             end
 
             obj.solve_graph();
